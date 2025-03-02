@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "CalendarHelper.h"
 #include "TrafficMonitor.h"
+#include "WindowsSettingHelper.h"
 
 ///////////////////////////////////////////////////////////////////////////////////
 int Date::week() const
@@ -59,6 +60,15 @@ wstring& DispStrings::Get(CommonDisplayItem item)
     return map_str[item];
 }
 
+const wstring& DispStrings::GetConst(CommonDisplayItem item) const
+{
+    auto iter = map_str.find(item);
+    if (iter != map_str.end())
+        return iter->second;
+    static wstring empty_str;
+    return empty_str;
+}
+
 const std::map<CommonDisplayItem, wstring>& DispStrings::GetAllItems() const
 {
     return map_str;
@@ -66,23 +76,89 @@ const std::map<CommonDisplayItem, wstring>& DispStrings::GetAllItems() const
 
 void DispStrings::operator=(const DispStrings& disp_str)
 {
-    map_str = disp_str.map_str;
+    std::map<CommonDisplayItem, wstring> tmp = disp_str.map_str;
     //如果赋值的字符串是定义的无效字符串，则不赋值
-    for (auto& iter = map_str.begin(); iter != map_str.end(); ++iter)
+    for (auto iter = tmp.begin(); iter != tmp.end(); ++iter)
     {
         if (iter->second == NONE_STR)
-            iter->second.clear();
+            iter->second = map_str[iter->first];
     }
+
+    map_str = tmp;
 }
 
 bool DispStrings::IsInvalid() const
 {
-    for (auto& iter = map_str.begin(); iter != map_str.end(); ++iter)
+    for (auto iter = map_str.begin(); iter != map_str.end(); ++iter)
     {
         if (iter->second == NONE_STR)
             return true;
     }
     return false;
+}
+
+std::wstring DispStrings::DefaultString(CommonDisplayItem display_item, bool is_main_window)
+{
+    std::wstring default_text;
+    if (display_item.is_plugin)
+    {
+        default_text = display_item.plugin_item->GetItemLableText();
+    }
+    else
+    {
+        switch (display_item.item_type)
+        {
+        case TDI_UP:
+            if (is_main_window)
+                default_text = CCommon::LoadText(IDS_UPLOAD_DISP, _T(": "));
+            else
+                default_text = _T("↑: ");
+            break;
+        case TDI_DOWN:
+            if (is_main_window)
+                default_text = CCommon::LoadText(IDS_DOWNLOAD_DISP, _T(": "));
+            else
+                default_text = _T("↓: ");
+            break;
+        case TDI_TOTAL_SPEED:
+            default_text = _T("↑↓: ");
+            break;
+        case TDI_TODAY_TRAFFIC:
+            default_text = CCommon::LoadText(IDS_TRAFFIC_USED, _T(": "));
+            break;
+        case TDI_CPU:
+            default_text = _T("CPU: ");
+            break;
+        case TDI_CPU_FREQ:
+            default_text = CCommon::LoadText(IDS_CPU_FREQ, _T(": "));
+            break;
+        case TDI_MEMORY:
+            default_text = CCommon::LoadText(IDS_MEMORY_DISP, _T(": "));
+            break;
+        case TDI_GPU_USAGE:
+            default_text = CCommon::LoadText(IDS_GPU_DISP, _T(": "));
+            break;
+        case TDI_CPU_TEMP:
+            default_text = _T("CPU: ");
+            break;
+        case TDI_GPU_TEMP:
+            default_text = CCommon::LoadText(IDS_GPU_DISP, _T(": "));
+            break;
+        case TDI_HDD_TEMP:
+            default_text = CCommon::LoadText(IDS_HDD_DISP, _T(": "));
+            break;
+        case TDI_MAIN_BOARD_TEMP:
+            default_text = CCommon::LoadText(IDS_MAINBOARD_DISP, _T(": "));
+            break;
+        case TDI_HDD_USAGE:
+            default_text = CCommon::LoadText(IDS_HDD_DISP, _T(": "));
+            break;
+        default:
+            break;
+        }
+    }
+
+    return default_text;
 }
 
 void DispStrings::Load(const std::wstring& plugin_id, const std::wstring& disp_str)
@@ -153,6 +229,66 @@ std::set<std::wstring>& StringSet::data()
     return string_set;
 }
 
+///////////////////////////////////////////////////////////////////////////////////
+bool SkinSettingData::IsEmpty() const
+{
+    return font.name.IsEmpty() && disp_str.GetAllItems().empty() && text_colors.empty();
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void MainWndSettingData::FormSkinSettingData(const SkinSettingData& sking_setting_data)
+{
+    font = sking_setting_data.font;
+    disp_str = sking_setting_data.disp_str;
+    text_colors = sking_setting_data.text_colors;
+    specify_each_item_color = sking_setting_data.specify_each_item_color;
+}
+
+SkinSettingData MainWndSettingData::ToSkinSettingData() const
+{
+    SkinSettingData sking_setting_data;
+    sking_setting_data.font = font;
+    sking_setting_data.disp_str = disp_str;
+    sking_setting_data.text_colors = text_colors;
+    sking_setting_data.specify_each_item_color = specify_each_item_color;
+    return sking_setting_data;
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+bool TaskBarSettingData::IsTaskbarTransparent() const
+{
+    if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.IsWindows11Taskbar())
+        return (transparent_color == back_color);
+    else
+        return transparent_color == 0;
+}
+
+void TaskBarSettingData::SetTaskabrTransparent(bool transparent)
+{
+    if (transparent)
+    {
+        if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.IsWindows11Taskbar())
+        {
+            //浅色模式下要设置任务栏窗口透明，只需将透明色设置成和背景色一样即可
+            CCommon::TransparentColorConvert(back_color);
+            transparent_color = back_color;
+        }
+        else
+        {
+            //深色模式下，背景色透明将透明色设置成黑色
+            transparent_color = 0;
+        }
+    }
+    else
+    {
+        //要设置任务栏窗口不透明，只需将透明色设置成和背景色不一样即可
+        if (back_color != TASKBAR_TRANSPARENT_COLOR1)
+            transparent_color = TASKBAR_TRANSPARENT_COLOR1;
+        else
+            transparent_color = TASKBAR_TRANSPARENT_COLOR2;
+    }
+}
+
 void TaskBarSettingData::ValidItemSpace()
 {
     if (item_space < 0)
@@ -161,10 +297,63 @@ void TaskBarSettingData::ValidItemSpace()
         item_space = 32;
 }
 
+void TaskBarSettingData::ValidVerticalMargin()
+{
+    if (vertical_margin < -10)
+        vertical_margin = -10;
+    if (vertical_margin > 10)
+        vertical_margin = 10;
+}
+
+void TaskBarSettingData::ValidWindowOffsetTop()
+{
+    if (window_offset_top < -20)
+        window_offset_top = -20;
+    if (window_offset_top > 20)
+        window_offset_top = 20;
+}
+
+void TaskBarSettingData::ValidWindowOffsetLeft()
+{
+    if (window_offset_left < -800)
+        window_offset_top = -800;
+    if (window_offset_top > 800)
+        window_offset_top = 800;
+}
+
 unsigned __int64 TaskBarSettingData::GetNetspeedFigureMaxValueInBytes() const
 {
     if (netspeed_figure_max_value_unit == 0)        //单位为KB
         return static_cast<unsigned __int64>(netspeed_figure_max_value) * 1024;
     else
         return static_cast<unsigned __int64>(netspeed_figure_max_value) * 1024 * 1024;
+}
+
+COLORREF TaskBarSettingData::GetUsageGraphColor() const
+{
+    if (graph_color_following_system)
+    {
+        COLORREF theme_color = theApp.GetThemeColor();
+        //转换为HLS
+        double h, l, s;
+        CDrawingManager::RGBtoHSL(theme_color, &h, &s, &l);
+        //根据当前系统深浅色模式指定亮度
+        if (theApp.m_last_light_mode)
+        {
+            //浅色任务栏，将亮度设为0.7
+            l = 0.7;
+        }
+        else
+        {
+            //深色任务栏，将亮度设为0.4
+            l = 0.4;
+        }
+        //转换回RGB
+        COLORREF graph_color = CDrawingManager::HLStoRGB_ONE(h, l, s);
+        return graph_color;
+    }
+    else
+    {
+        return status_bar_color;
+    }
 }
